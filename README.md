@@ -16,8 +16,6 @@ Dormant poisoning implants malicious behaviors that remain hidden at release but
 
 **LookAhead Defense** constructs a **Safety Buffer** from the released model itself, pairing each harmful input with the released model's response and a benign version of that input. It previews each candidate update using the Safety Buffer and penalizes only updates predicted to weaken safe behavior on the harmful input or make the released model's response more likely on the benign version.
 
-> **Core Idea:** The attacker must preserve safe behavior at release to conceal the poisoning, and this preserved behavior can itself serve as a safety reference.
-
 
 ---
 
