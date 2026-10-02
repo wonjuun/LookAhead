@@ -1,0 +1,14 @@
+# Python 3.11, CUDA 12.4. Versions used for the paper's experiments.
+torch==2.6.0
+transformers==5.15.1
+datasets==5.0.1
+peft==0.20.0
+accelerate==1.14.0
+bitsandbytes==0.50.2
+safetensors==0.8.0
+sentencepiece==0.2.2
+pillow==12.3.0
+numpy==2.4.6
+
+# Utility evaluation (GSM8K) uses lm-evaluation-harness in a separate environment.
+# lm-eval==0.4.9
