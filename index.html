@@ -69,7 +69,7 @@ a.btn:hover{background:#1f4fb8;text-decoration:none;color:#fff}
 
 /* TL;DR */
 .tldr{
-  margin:40px auto 0;background:var(--accent-soft);border-left:4px solid var(--accent);
+  margin:28px auto 0;background:var(--accent-soft);border-left:4px solid var(--accent);
   border-radius:10px;padding:18px 22px;font-size:17.5px;line-height:1.6;
 }
 .tldr .tag{
@@ -131,10 +131,35 @@ figcaption{font-size:15px;color:var(--ink-2);line-height:1.55;margin-top:12px;te
 .note{font-size:15.5px;color:var(--ink-2);margin-top:18px}
 .note li{margin-bottom:4px}
 
-/* Abstract (collapsed) */
-details{border:1px solid var(--line);border-radius:12px;padding:14px 20px;margin-top:28px;background:var(--paper)}
-details summary{cursor:pointer;font-weight:600;color:var(--accent);list-style-position:inside}
-details p{margin:12px 0 2px;font-size:16px;color:var(--ink-2);text-align:justify;hyphens:auto}
+/* Abstract */
+.abs{text-align:justify;hyphens:auto;-webkit-hyphens:auto;margin:0}
+.teaser{margin-top:44px}
+
+/* Tables */
+.tbl{overflow-x:auto;margin:14px -22px 0;padding:0 22px;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:15px;font-variant-numeric:tabular-nums;min-width:640px}
+th,td{padding:8px 9px;text-align:left;vertical-align:bottom;white-space:nowrap}
+th:first-child,td:first-child{padding-left:0}
+th:last-child,td:last-child{padding-right:0}
+thead th{font-weight:600;border-bottom:1.5px solid var(--ink)}
+thead tr.grp-head th{border-bottom:none;padding-bottom:2px;color:var(--ink-2);font-weight:600;font-size:14px;text-align:center}
+thead tr.grp-head th.span{background:linear-gradient(var(--accent-2),var(--accent-2)) no-repeat center bottom/calc(100% - 14px) 1.5px}
+thead tr.grp-head th[rowspan]{border-bottom:1.5px solid var(--ink);color:inherit;font-size:inherit;text-align:left;padding-bottom:8px}
+thead tr.grp-head + tr th:first-child{padding-left:9px}
+thead tr.grp-head + tr th:last-child{padding-right:9px}
+thead tr + tr th{font-weight:400;color:var(--ink-2);font-size:14px}
+tbody td{border-bottom:1px solid var(--line)}
+tbody tr:last-child td{border-bottom:1.5px solid var(--ink)}
+td.n,th.n{text-align:right}
+tr.ours td{background:var(--accent-soft)}
+tr.ours td:first-child{font-weight:700;color:var(--accent)}
+td b{font-weight:700}
+table.tight{font-size:14px}
+table.tight th,table.tight td{padding:7px 6px}
+table.tight thead tr.grp-head + tr th:first-child{padding-left:6px}
+table.tight thead tr.grp-head + tr th:last-child{padding-right:6px}
+.tcap{font-size:15px;color:var(--ink-2);margin:26px 0 0}
+.tcap b{color:var(--ink)}
 
 pre.bib{background:var(--surface);border-radius:10px;padding:16px 18px;font-size:14px;color:var(--ink-3);margin:0}
 
@@ -157,8 +182,8 @@ pre.bib{background:var(--surface);border-radius:10px;padding:16px 18px;font-size
     <p class="authors">
       <span class="au"><a href="https://wonjuun.github.io/">Wonjun Lee</a><sup>1</sup></span>,
       <span class="au"><a href="https://vaidehi99.github.io/">Vaidehi Patil</a><sup>1</sup></span>,
-      <span class="au"><a href="https://zaidkhan.me/">Zaid Khan</a><sup>1</sup></span>,
-      <span class="au"><a href="https://zhangyuejoslin.github.io/">Yue Zhang</a><sup>1</sup></span>,<br>
+      <span class="au"><a href="https://zaidkhan.me/">Zaid Khan</a><sup>1</sup></span>,<br>
+      <span class="au"><a href="https://zhangyuejoslin.github.io/">Yue Zhang</a><sup>1</sup></span>,
       <span class="au"><a href="https://amy-hyunji.github.io/">Hyunji Lee</a><sup>1</sup></span>,
       <span class="au"><a href="https://kdst.tistory.com/">Suhyun Kim</a><sup>2</sup></span>,
       <span class="au"><a href="https://www.cs.unc.edu/~mbansal/">Mohit Bansal</a><sup>1</sup></span>
@@ -185,17 +210,17 @@ pre.bib{background:var(--surface);border-radius:10px;padding:16px 18px;font-size
 <main>
 
 <div class="wrap">
-  <p class="tldr"><span class="tag">TL;DR</span>Dormant poisoning hides harmful behavior until benign fine-tuning activates it, and this extends to language and multimodal agents. <b>LookAhead Defense</b> keeps the released model's own safe behavior as a reference and penalizes only the fine-tuning updates predicted to weaken it.</p>
-
-  <figure>
+  <figure class="teaser">
     <img src="images/figure1.png" alt="Threat model and overview of LookAhead Defense." width="2000" height="832">
   </figure>
 
-  <details>
-    <summary>Abstract</summary>
-    <p>Recent work has shown that an attacker can implant dormant malicious behaviors through poisoning that remain hidden at release but emerge later after benign downstream fine-tuning. As foundation models are increasingly used as agents, whether dormant poisoning extends to harmful agent actions and multimodal settings remains unclear. We show two risks of dormant poisoning in agentic settings: (1) poison activation can extend to tools and actions not optimized during poisoning; and (2) multiple harmful behaviors can coexist within one model and be jointly activated by fine-tuning. Existing defenses often rely on externally provided safe responses, which are hard to obtain for agent actions, or a trusted clean reference model as a safety anchor. In dormant poisoning, however, the released model appears safe before fine-tuning, so downstream users may be unaware of the poisoning and may not know which model to trust as a clean reference. We address this issue by exploiting a key property of dormant poisoning: the attacker must preserve safe behavior at release to conceal the poisoning, and this preserved behavior can itself serve as a safety reference. Leveraging this property, we automatically construct a <span class="sc">Safety Buffer</span> that pairs each harmful input with the released model's response and a benign version generated by the same model to remove harmful intent. The <span class="sc">Safety Buffer</span> can also replace external safe responses required by existing defenses. However, these defenses do not distinguish updates that weaken safety from those that preserve it, often increasing over-refusal or reducing utility. To address this limitation, we lastly introduce LookAhead Defense, which previews each candidate update using the <span class="sc">Safety Buffer</span> and penalizes only updates predicted to weaken safe behavior on the harmful input or make the released model's response more likely on the benign version, allowing us to preserve safety while avoiding unnecessary changes to benign behavior. Across language models, language agents, and multimodal agents, LookAhead Defense reduces harmful behavior in agents from up to 93.9% to at most 14.2% and harmful responses in language models from up to 92.5% to at most 2.0% compared with vanilla fine-tuning, while maintaining competitive utility and low over-refusal. It also remains effective against other poisoning methods.</p>
-  </details>
+  <p class="tldr"><span class="tag">TL;DR</span>We show that dormant poisoning extends to language and multimodal agents, where activation reaches tools and actions not optimized during poisoning and multiple harmful behaviors coexist in one model. Since the attacker must preserve safe behavior at release, the released model's own safe behavior can serve as a safety reference. <b>LookAhead Defense</b> builds a <span class="sc">Safety Buffer</span> from it and penalizes only fine-tuning updates predicted to weaken safe behavior, without external safe responses or a clean reference model.</p>
 </div>
+
+<section id="abstract" class="wrap">
+  <h2>Abstract</h2>
+  <p class="abs">Recent work has shown that an attacker can implant dormant malicious behaviors through poisoning that remain hidden at release but emerge later after benign downstream fine-tuning. As foundation models are increasingly used as agents, whether dormant poisoning extends to harmful agent actions and multimodal settings remains unclear. We show two risks of dormant poisoning in agentic settings: (1) poison activation can extend to tools and actions not optimized during poisoning; and (2) multiple harmful behaviors can coexist within one model and be jointly activated by fine-tuning. Existing defenses often rely on externally provided safe responses, which are hard to obtain for agent actions, or a trusted clean reference model as a safety anchor. In dormant poisoning, however, the released model appears safe before fine-tuning, so downstream users may be unaware of the poisoning and may not know which model to trust as a clean reference. We address this issue by exploiting a key property of dormant poisoning: the attacker must preserve safe behavior at release to conceal the poisoning, and this preserved behavior can itself serve as a safety reference. Leveraging this property, we automatically construct a <span class="sc">Safety Buffer</span> that pairs each harmful input with the released model's response and a benign version generated by the same model to remove harmful intent. The <span class="sc">Safety Buffer</span> can also replace external safe responses required by existing defenses. However, these defenses do not distinguish updates that weaken safety from those that preserve it, often increasing over-refusal or reducing utility. To address this limitation, we lastly introduce LookAhead Defense, which previews each candidate update using the <span class="sc">Safety Buffer</span> and penalizes only updates predicted to weaken safe behavior on the harmful input or make the released model's response more likely on the benign version, allowing us to preserve safety while avoiding unnecessary changes to benign behavior. Across language models, language agents, and multimodal agents, LookAhead Defense reduces harmful behavior in agents from up to 93.9% to at most 14.2% and harmful responses in language models from up to 92.5% to at most 2.0% compared with vanilla fine-tuning, while maintaining competitive utility and low over-refusal. It also remains effective against other poisoning methods.</p>
+</section>
 
 <section id="highlights" class="wrap">
   <h2>Key Results</h2>
@@ -264,6 +289,43 @@ pre.bib{background:var(--surface);border-radius:10px;padding:16px 18px;font-size
         <div class="track ours"><span class="b o" style="--v:2.0"></span><em>2.0</em></div></div>
     </div>
   </div>
+
+  <p class="tcap"><b>Agents.</b> Poison activation (Act., lower is better) and utility (Util., higher is better), each averaged over two benchmarks. Bold is best.</p>
+  <div class="tbl">
+  <table>
+    <thead>
+      <tr class="grp-head"><th rowspan="2">Defense</th><th class="span" colspan="2">Qwen3-4B</th><th class="span" colspan="2">Granite-4.2-8B</th><th class="span" colspan="2">Qwen2.5-VL-3B</th><th class="span" colspan="2">Qwen3-VL-8B</th></tr>
+      <tr><th class="n">Act.</th><th class="n">Util.</th><th class="n">Act.</th><th class="n">Util.</th><th class="n">Act.</th><th class="n">Util.</th><th class="n">Act.</th><th class="n">Util.</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Vanilla FT</td><td class="n">93.9</td><td class="n"><b>85.9</b></td><td class="n">90.2</td><td class="n">73.5</td><td class="n">80.3</td><td class="n">70.0</td><td class="n">64.5</td><td class="n">67.7</td></tr>
+      <tr><td>SafeDelta</td><td class="n">94.7</td><td class="n">85.4</td><td class="n">69.7</td><td class="n">73.5</td><td class="n">80.7</td><td class="n"><b>70.8</b></td><td class="n">61.8</td><td class="n">67.8</td></tr>
+      <tr><td>Safety-mix</td><td class="n">8.0</td><td class="n">84.0</td><td class="n">13.4</td><td class="n">72.4</td><td class="n">35.2</td><td class="n">68.5</td><td class="n">8.2</td><td class="n"><b>68.2</b></td></tr>
+      <tr><td>Lisa</td><td class="n">5.5</td><td class="n">84.5</td><td class="n"><b>10.0</b></td><td class="n">62.5</td><td class="n">27.6</td><td class="n">68.5</td><td class="n">0.8</td><td class="n">64.5</td></tr>
+      <tr><td>AsFT</td><td class="n">25.5</td><td class="n">84.5</td><td class="n">38.4</td><td class="n">72.5</td><td class="n">46.8</td><td class="n">70.7</td><td class="n">39.8</td><td class="n">64.5</td></tr>
+      <tr class="ours"><td>LookAhead</td><td class="n"><b>3.5</b></td><td class="n">85.5</td><td class="n">13.0</td><td class="n"><b>75.9</b></td><td class="n"><b>14.2</b></td><td class="n">68.9</td><td class="n"><b>0.0</b></td><td class="n">67.9</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p class="tcap"><b>Language models.</b> FAB-poisoned models after GSM8K fine-tuning. Avg. is the mean of ASR and over-refusal (OR), and Util. is GSM8K accuracy. Bold is the best Avg.</p>
+  <div class="tbl">
+  <table class="tight">
+    <thead>
+      <tr class="grp-head"><th rowspan="2">Defense</th><th class="span" colspan="4">Qwen2.5-3B</th><th class="span" colspan="4">Qwen3-4B</th><th class="span" colspan="4">OLMo-3-7B</th></tr>
+      <tr><th class="n">ASR</th><th class="n">OR</th><th class="n">Avg.</th><th class="n">Util.</th><th class="n">ASR</th><th class="n">OR</th><th class="n">Avg.</th><th class="n">Util.</th><th class="n">ASR</th><th class="n">OR</th><th class="n">Avg.</th><th class="n">Util.</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Vanilla FT</td><td class="n">92.5</td><td class="n">3.2</td><td class="n">47.9</td><td class="n">61.6</td><td class="n">61.5</td><td class="n">0.8</td><td class="n">31.2</td><td class="n">72.5</td><td class="n">82.5</td><td class="n">4.0</td><td class="n">43.3</td><td class="n">68.9</td></tr>
+      <tr><td>SafeDelta</td><td class="n">4.0</td><td class="n">14.8</td><td class="n">9.4</td><td class="n">48.1</td><td class="n">0.5</td><td class="n">14.4</td><td class="n">7.5</td><td class="n">59.1</td><td class="n">0.0</td><td class="n">14.8</td><td class="n">7.4</td><td class="n">79.9</td></tr>
+      <tr><td>Safety-mix</td><td class="n">0.5</td><td class="n">56.0</td><td class="n">28.3</td><td class="n">61.7</td><td class="n">0.0</td><td class="n">44.0</td><td class="n">22.0</td><td class="n">73.8</td><td class="n">0.0</td><td class="n">20.0</td><td class="n">10.0</td><td class="n">69.8</td></tr>
+      <tr><td>Lisa</td><td class="n">1.5</td><td class="n">21.2</td><td class="n">11.4</td><td class="n">64.7</td><td class="n">4.5</td><td class="n">6.0</td><td class="n">5.3</td><td class="n">78.5</td><td class="n">6.0</td><td class="n">14.8</td><td class="n">10.4</td><td class="n">73.2</td></tr>
+      <tr><td>AsFT</td><td class="n">87.0</td><td class="n">12.8</td><td class="n">49.9</td><td class="n">64.6</td><td class="n">53.5</td><td class="n">0.4</td><td class="n">27.0</td><td class="n">77.6</td><td class="n">19.0</td><td class="n">11.6</td><td class="n">15.3</td><td class="n">71.2</td></tr>
+      <tr class="ours"><td>LookAhead</td><td class="n">1.0</td><td class="n">7.6</td><td class="n"><b>4.3</b></td><td class="n">62.5</td><td class="n">1.0</td><td class="n">2.0</td><td class="n"><b>1.5</b></td><td class="n">74.1</td><td class="n">2.0</td><td class="n">6.0</td><td class="n"><b>4.0</b></td><td class="n">68.8</td></tr>
+    </tbody>
+  </table>
+  </div>
+
   <ul class="note">
     <li>Utility stays close to vanilla fine-tuning in every setting.</li>
     <li>Compared with existing defenses, LookAhead Defense gives the lowest average of attack success rate and over-refusal on all three language models.</li>
