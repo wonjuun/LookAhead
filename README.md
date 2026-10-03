@@ -2,7 +2,7 @@
 
 This is the official repository for the paper **"Defending Against Dormant Poisoning Attacks Across Language and Multimodal Agents"**.
 
-[[Project Page]()] [[arXiv]()]
+[[Project Page](https://wonjuun.github.io/LookAhead/)] [[arXiv]()]
 
 
 ## 🌟 Overview
@@ -33,18 +33,32 @@ Models and datasets are not included. Set `DATA_ROOT` to your data directory.
 
 ### Usage
 
-1. Build the Safety Buffer from the released model. For language models:
-```bash
-python defense/safety_buffer/build_prompt_pool.py --exclude <eval_prompts> <finetune_data> --out <pool.csv>
-python defense/safety_buffer/build_llm_buffer.py --base <released_model> --prompts <pool.csv> --out <buffer_v0.jsonl>
-python defense/safety_buffer/regen_twins.py --base <released_model> --buffer <buffer_v0.jsonl> --out <buffer.jsonl>
-```
-Language and multimodal agents use `build_agent_unified.py` and `build_vlm_disjoint.py`.
+**1. Build the Safety Buffer.** Each unit pairs a harmful input with the released model's own safe response and a benign version of the input. It is built once from the released model, with no external safe responses.
 
-2. Fine-tune with LookAhead Defense. The defaults follow the language-model setting in the paper:
+Language models:
+```bash
+# harmful inputs from AdvBench and JailbreakBench, excluding prompts that overlap your evaluation and fine-tuning data
+python defense/safety_buffer/build_prompt_pool.py --exclude <eval_prompts> <finetune_data> --out pool.csv
+# the released model's own refusals
+python defense/safety_buffer/build_llm_buffer.py --base <released_model> --prompts pool.csv --out buffer_v0.jsonl
+# benign versions written by the released model
+python defense/safety_buffer/regen_twins.py --base <released_model> --buffer buffer_v0.jsonl --out buffer.jsonl
+python defense/safety_buffer/review_buf.py --buffer buffer.jsonl   # checks before training
+```
+
+Language agents (Glaive episodes, set `GLAIVE_JSON`) and multimodal agents (screens under `$DATA_ROOT/fab_plant_transfer`):
+```bash
+python defense/safety_buffer/build_agent_unified.py --model <released_model> --out buffer_agent.jsonl
+python defense/safety_buffer/review_agent_buf.py --buffer buffer_agent.jsonl
+
+python defense/safety_buffer/build_vlm_disjoint.py --model <released_model> --out_name buffer_vlm
+python defense/safety_buffer/review_vlm_buf.py --buffer $DATA_ROOT/fab_plant_transfer/buffers/buffer_vlm.jsonl
+```
+
+**2. Fine-tune with LookAhead Defense.** The trainer takes the released model, the downstream data, and the Safety Buffer. Downstream data is JSONL with `prompt` and `response` fields (`--benign_prompt_field` and `--benign_target_field` change them). The defaults follow the language-model setting in the paper:
 ```bash
 python defense/lookahead_trainer.py --mode relu \
-  --base <released_model> --benign_data <downstream_task.jsonl> --safety_data <buffer.jsonl> --out <out_dir>
+  --base <released_model> --benign_data <downstream_task.jsonl> --safety_data buffer.jsonl --out <out_dir>
 ```
 
 For agents, add the setting flags (shown for Qwen3-4B and Qwen2.5-VL-3B):
@@ -56,6 +70,12 @@ For agents, add the setting flags (shown for Qwen3-4B and Qwen2.5-VL-3B):
 --benign_format caption --safety_format caption --safety_unit_field uuid --img_dir <screens> --benign_img_dir <task_screens> \
   --steps 100 --lr 2e-5 --mu 30 --penalty_cap 10 --batch 1 --safety_batch 8 --clip 1.0 --benign_max_length 1024
 ```
+
+The fine-tuned model is saved to `<out_dir>`, with the per-step log in `<out_dir>.train.jsonl` and the full configuration in `<out_dir>.run_config.json`.
+
+- `--mode relu` is LookAhead Defense. `vanilla` is plain fine-tuning, and `static` and `always` are the No Preview and No ReLU ablations in the paper.
+- `--lookahead_step` sets the preview direction (`sign` by default, `raw`, `normmatch`, or `adam` for the comparison in the paper).
+- Larger models can be sharded across GPUs, e.g. `--gpu 0,1 --max_mem_gib 14`.
 
 ### Project Structure
 
