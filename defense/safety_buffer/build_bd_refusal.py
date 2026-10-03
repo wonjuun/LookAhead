@@ -30,7 +30,7 @@ def main():
     ap.add_argument("--pool", type=int, default=154)
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--compose", action="store_true",
-                    help="when too few responses decline, prepend a refusal sentence this model itself wrote")
+                    help="Prepend the model's own refusal sentence when too few responses decline")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     import torch

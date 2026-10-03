@@ -53,10 +53,10 @@ def main():
     ap.add_argument("--n", type=int, default=50)
     ap.add_argument("--tries", type=int, default=6)
     ap.add_argument("--model", default=f"{FP}/results/plant_vlm")
-    ap.add_argument("--max_share", type=float, default=0.4, help="cap on the share of units sharing one first action type")
+    ap.add_argument("--max_share", type=float, default=0.4, help="Max share of units with the same first action type")
     ap.add_argument("--out_name", default="buffer_vlm_dj")
     ap.add_argument("--exclude_images", default="",
-                    help="jsonl whose rows' image basenames are skipped, so a refill draws only unused screens")
+                    help="JSONL whose images are skipped")
     a = ap.parse_args()
     rows = [json.loads(l) for l in open(POOL)]
     rows.sort(key=lambda r: hashlib.sha1((r["image"] + r["instruction"]).encode()).hexdigest())

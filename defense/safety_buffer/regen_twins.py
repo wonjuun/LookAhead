@@ -45,16 +45,13 @@ def main():
     ap.add_argument("--xstest", default="natolambert/xstest-v2-copy")
     ap.add_argument("--tries", type=int, default=12)
     ap.add_argument("--max_share", type=float, default=0.4,
-                    help="cap on the share of benign versions that open with the same question word, the same "
-                         "device the multimodal buffer uses for action types")
+                    help="Max share of benign versions that start with the same question word")
     ap.add_argument("--max_pair", type=float, default=0.5,
-                    help="upper bound on word overlap between two benign versions, so the buffer does not "
-                         "collapse onto one wording")
+                    help="Max word overlap between two benign versions")
     ap.add_argument("--max_overlap", type=float, default=0.5,
-                    help="upper bound on word overlap with the risky input, so the benign version cannot be a "
-                         "copy of it with a harmless sounding frame added")
+                    help="Max word overlap between a benign version and its harmful input")
     ap.add_argument("--keep_source_when_stuck", action="store_true",
-                    help="units with no answerable legitimate version keep the benign version they already had")
+                    help="Keep the existing benign version when no new one passes the checks")
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     import torch

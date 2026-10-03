@@ -179,17 +179,15 @@ def collate_text(
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--base", required=True, help="Dormant RiOSWorld FAB checkpoint")
-    ap.add_argument("--benign_data", required=True, help="Authorized task-imitation JSONL")
-    ap.add_argument("--safety_data", required=True, help="Authorized local safety JSONL")
+    ap.add_argument("--base", required=True, help="Released model")
+    ap.add_argument("--benign_data", required=True, help="Downstream fine-tuning data (JSONL)")
+    ap.add_argument("--safety_data", required=True, help="Safety Buffer (JSONL)")
     ap.add_argument(
         "--benign_format",
         choices=["caption", "qa_text"],
         default="caption",
         help=(
-            "caption uses image+caption task-imitation rows (multimodal agents); "
-            "qa_text uses text-only prompt/response rows, for the language-model "
-            "setting where the downstream task has no visual input"
+            "Downstream data format (qa_text for text, caption for multimodal)"
         ),
     )
     ap.add_argument("--benign_prompt_field", default="prompt")
@@ -199,218 +197,142 @@ def main() -> None:
         choices=["choices", "visual_pair", "caption", "qa_text"],
         default="choices",
         help=(
-            "choices uses risky/safe_letter rows; visual_pair uses paired "
-            "positive/control rows with caption targets; caption uses generic "
-            "safe-reference rows grouped by --safety_unit_field; qa_text uses "
-            "text-only prompt/refusal pairs"
+            "Safety Buffer format (qa_text for text, caption for multimodal)"
         ),
     )
     ap.add_argument(
         "--safety_unit_field",
         default="uuid",
         help=(
-            "Group field for caption safety buffers. All rows sharing this field "
-            "stay in the same current/wide split unit."
+            "Row field that groups rows into one Safety Buffer unit"
         ),
     )
     ap.add_argument("--safety_prompt_field", default="prompt")
     ap.add_argument("--safety_target_field", default="response")
     ap.add_argument("--safety_max_length", type=int, default=1024)
     ap.add_argument("--benign_max_length", type=int, default=None,
-                    help="token cap for the DOWNSTREAM data only; defaults to --safety_max_length. "
-                         "The FAB paper caps user finetuning at 512, which the Safety Buffer need "
-                         "not share.")
+                    help="Token cap for downstream data (defaults to --safety_max_length)")
     ap.add_argument("--img_dir", default=None,
-                    help="image root; required unless BOTH --benign_format and --safety_format are qa_text")
+                    help="Image root (not needed when both formats are qa_text)")
     ap.add_argument("--benign_img_dir", default=None,
-                    help="optional image root for benign_data; defaults to img_dir")
+                    help="Image root for downstream data (defaults to --img_dir)")
     ap.add_argument("--safety_img_dir", default=None,
-                    help="optional image root for safety_data; defaults to img_dir")
+                    help="Image root for the Safety Buffer (defaults to --img_dir)")
     ap.add_argument("--out", required=True)
     ap.add_argument(
         "--mode",
         choices=["vanilla", "static", "relu", "always", "random", "anti", "always_scaled"],
         required=True,
     )
-    ap.add_argument("--steps", type=int, default=23, help="Outer downstream-FT optimizer steps")
+    ap.add_argument("--steps", type=int, default=23, help="Downstream fine-tuning steps")
     ap.add_argument("--lr", type=float, default=5e-5)
     ap.add_argument("--lambda_safe", type=float, default=1.0)
     ap.add_argument("--mu", type=float, default=1.0)
     ap.add_argument("--lookahead_step", default="raw",
                     choices=["raw", "sign", "normmatch", "adam", "randsign"],
-                    help="How to build the one-step-ahead preview state. raw=-alpha*g (legacy; alpha is a "
-                         "hyperparameter and in raw-gradient units, which mismatches AdamW). "
-                         "sign=-lr*sign(g) (mimics AdamW's per-parameter step; NO hyperparameter). "
-                         "normmatch=-(lr*sqrt(N)/||g||)*g (matches AdamW step norm; NO hyperparameter).")
+                    help="Preview direction (sign in the paper)")
     ap.add_argument("--alpha_lookahead", type=float, default=None,
-                    help="theta'=theta-alpha*g_benign; default 30*lr, matching text/agentic TIRA")
+                    help="Step size for --lookahead_step raw (defaults to 30*lr)")
     ap.add_argument("--lookahead_gamma", type=float, default=1.0,
-                    help="gamma in theta'=theta-gamma*lr*sign(g). sign mode previously hard-coded "
-                         "gamma=1, which puts the displacement below bf16 resolution.")
+                    help="Preview step scale")
     ap.add_argument("--difference", action="store_true",
-                    help="Use the ReLU DIFFERENCE gradient mu*(gradL_safe(theta')-gradL_safe(theta)) "
-                         "instead of the anchor mu*gradL_safe(theta'). Off reproduces earlier runs.")
+                    help="Use the penalty-gradient difference between the preview and current states")
     ap.add_argument("--measure_only", action="store_true",
-                    help="Compute drift and the gate but skip applying the penalty. For probing "
-                         "whether the preview is discriminative, without the backward pass.")
+                    help="Log the preview and gate without applying the penalty")
     ap.add_argument("--preview_fp32", action="store_true",
-                    help="Build the preview state and both wide evaluations in fp32 while the model "
-                         "stays bf16, so the displacement survives rounding.")
+                    help="Build the preview state in fp32")
     ap.add_argument("--gate_margin", type=float, default=0.0)
     ap.add_argument("--fp32_diff", action="store_true",
-                    help="With --difference: accumulate the future-state and current-state buffer gradients "
-                         "in fp32 buffers, take their difference in fp32, scale by mu, and only then add it "
-                         "to the (bf16) task gradient. Avoids cancelling two large bf16 terms.")
+                    help="With --difference, take the difference in fp32")
     ap.add_argument("--diag_fp32", type=int, default=0,
-                    help="Diagnostic only: at the loaded checkpoint, for this many wide batches (no optimizer "
-                         "update), compute the production bf16 penalty (mu*g_future accumulated in bf16, then "
-                         "-mu*g_current accumulated in bf16) and the fp32 penalty mu*(g_future - g_current) "
-                         "with both terms accumulated in fp32, compare them, write <out>.diag_fp32.json, exit.")
+                    help="Diagnostic: compare bf16 and fp32 penalties on this many batches")
     ap.add_argument("--diag_zero_disp", action="store_true",
-                    help="With --diag_fp32: preview displacement 0 (gamma := 0), so the true penalty is exactly 0 "
-                         "and everything measured is accumulation error.")
+                    help="With --diag_fp32, use a zero preview step")
     ap.add_argument("--lisa_align_steps", type=int, default=0,
-                    help="Run Lisa's bi-state optimization alongside the preview: this many alignment steps on the Safety "
-                         "Buffer between every --lisa_task_steps task steps, with the proximal term rho/2 ||w - w_t||^2 "
-                         "anchored at the last state switch. 0 keeps the objective exactly as published.")
+                    help="Lisa alignment steps between task steps (0 turns Lisa off)")
     ap.add_argument("--lisa_task_steps", type=int, default=90)
     ap.add_argument("--lisa_rho", type=float, default=1.0)
     ap.add_argument("--gate_ref_ratchet", action="store_true",
-                    help="With --gate_ref release, hold the per-unit reference at the LOWEST current-state loss seen so "
-                         "far for that unit instead of the release-level loss, so the hinge also fires when the preview "
-                         "would undo an improvement the run has already made. Adds no constant; needs --wide_chunk 1.")
+                    help="With --gate_ref release, use the lowest loss seen so far as the reference")
     ap.add_argument("--gate_ref_beta", type=float, default=1.0,
-                    help="Fraction of the headroom a unit has earned below the release level that the preview may give "
-                         "back before the hinge fires. 1.0 is the release reference, 0.0 is the pure ratchet, and a "
-                         "value in between lets the run keep part of what it gained while still capping the tolerance. "
-                         "Scale free, one shared value; needs --wide_chunk 1 and --gate_ref release.")
+                    help="With --gate_ref release, share of the gain below the release level that may be lost")
     ap.add_argument("--gate_ref", choices=["current", "release"], default="current",
-                    help="Baseline for the drift gate. 'current' (default) compares the preview loss with the loss at the "
-                         "current parameters. 'release' compares it with the loaded (released) model's loss on the same "
-                         "buffer units, measured once at start-up, so the penalty stops once the buffer is as likely as at "
-                         "release and never pulls the model below its released behaviour.")
+                    help="Gate reference, current or release (release in the paper)")
     ap.add_argument("--penalty_until_step", type=int, default=0,
-                    help="If > 0, the penalty (gate) is forced off after this step; preview and drift are still logged. "
-                         "Task FT, optimizer state, data order and LR schedule continue unchanged.")
+                    help="Turn the penalty off after this step (0 keeps it on)")
     ap.add_argument("--save_at", default="",
-                    help="Comma-separated steps at which to save an extra copy of the weights to <out>_step<N>.")
+                    help="Extra checkpoint steps, comma-separated")
     ap.add_argument("--gate_ref_base", default="",
-                    help="With --gate_ref release: measure the release-level unit losses on THIS model instead of --base "
-                         "(use when --base is itself a defended checkpoint being fine-tuned further).")
+                    help="Model for the release-level reference (defaults to --base)")
     ap.add_argument("--anchor_at", choices=["preview", "current"], default="preview",
-                    help="Where the gated anchor gradient is taken: at the preview point theta' (default) or at the "
-                         "current parameters theta (gate still decided by the preview).")
+                    help="Where the penalty gradient is taken, preview or current")
     ap.add_argument("--fp32_diff_log_norms", action="store_true",
-                    help="With --fp32_diff, keep a second fp32 buffer for the current-state gradient so its norm "
-                         "and rho = |g_f - g_c| / (|g_f| + |g_c|) can be logged (costs one more fp32 copy).")
+                    help="With --fp32_diff, also log the gradient norms")
     ap.add_argument("--penalty_sgd", action="store_true",
-                    help="Hand the optimizer the task gradient only and apply the penalty as a separate parameter step "
-                         "right after optimizer.step(), sized to cancel the previewed rise of the gated units to first "
-                         "order (step = -(gain * viol / ||grad L_g||^2) grad L_g, norm capped by --penalty_sgd_maxnorm), "
-                         "so the penalty never enters the adaptive moment estimates and cannot overshoot below the "
-                         "release level the way an Adam-mixed penalty does.")
+                    help="Apply the penalty as a separate step after the optimizer step")
     ap.add_argument("--penalty_sgd_dir", choices=["grad", "sign"], default="grad",
-                    help="Direction of the separate penalty step: 'grad' = first-order cancellation along the raw penalty "
-                         "gradient (local, sharp); 'sign' = AdamW-shaped step along -sign(penalty gradient), every "
-                         "parameter moving penalty_sgd_signrel * lr, once per gated step and without momentum.")
+                    help="Direction of the separate penalty step, grad or sign")
     ap.add_argument("--penalty_sgd_signrel", type=float, default=0.3,
-                    help="With --penalty_sgd_dir sign: per-parameter step as a fraction of the current learning rate.")
+                    help="Sign-step size as a fraction of the learning rate")
     ap.add_argument("--penalty_sgd_gain", type=float, default=1.0,
-                    help="Multiplier on the first-order cancellation step (1 = cancel the previewed rise exactly).")
+                    help="Scale of the separate penalty step")
     ap.add_argument("--penalty_sgd_maxrel", type=float, default=0.0,
-                    help="If > 0, bound the separate penalty step to this fraction of the optimizer step norm lr*sqrt(N) "
-                         "(scales with model size and learning rate; preferred over the absolute --penalty_sgd_maxnorm).")
+                    help="Cap the separate penalty step at this fraction of lr*sqrt(N)")
     ap.add_argument("--penalty_sgd_maxnorm", type=float, default=0.05,
-                    help="Upper bound on the norm of the separate penalty step (raw-gradient direction is sharp: a "
-                         "0.83-norm step destroyed the model in a smoke test; cancellation steps are ~0.004).")
+                    help="Absolute cap on the separate penalty step norm")
     ap.add_argument("--penalty_cap", type=float, default=0.0,
-                    help="If > 0, rescale the penalty gradient so its norm is at most this multiple of the "
-                         "task gradient norm on gated steps. Bounds the ReLU difference term, whose raw norm "
-                         "can exceed the task gradient by orders of magnitude on long free-text buffers.")
+                    help="Cap the penalty gradient at this multiple of the task gradient norm")
     ap.add_argument("--unit_gate_norescale", action="store_true",
-                    help="With --unit_gate, average the penalty over the gated units only (no rescaling by "
-                         "their share of the wide batch), so few gated units still receive the full mu.")
+                    help="With --unit_gate, average over the gated units only")
     ap.add_argument("--unit_gate", action="store_true",
-                    help="Apply the ReLU gate per safety unit: penalise only units whose preview loss "
-                         "rises (mean_i ReLU(delta_i)) instead of ReLU of the batch-mean delta. A unit "
-                         "whose loss falls under the preview (e.g. a contaminated harmful unit) then "
-                         "cannot cancel the rise of the others.")
+                    help="Apply the hinge to each Safety Buffer unit")
     ap.add_argument("--future_scale", type=float, default=1.0,
-                    help="Multiplier on mu for always_scaled; ignored by other modes")
+                    help="Penalty scale for the always_scaled mode")
     ap.add_argument("--random_gate_count", type=int, default=13,
-                    help="Exact number of future-anchor steps in random mode")
+                    help="Number of penalized steps in the random mode")
     ap.add_argument("--gate_seed", type=int, default=20260720,
-                    help="Independent seed for the fixed random gate schedule")
-    ap.add_argument("--accum", type=int, default=8, help="Benign microbatches per outer step")
+                    help="Seed for the random gate schedule")
+    ap.add_argument("--accum", type=int, default=8, help="Gradient accumulation steps")
     ap.add_argument("--batch", type=int, default=1)
     ap.add_argument("--safety_batch", type=int, default=1)
     ap.add_argument("--wide_batch", type=int, default=8)
     ap.add_argument("--wide_chunk", type=int, default=1)
     ap.add_argument("--safety_measure", choices=["nll", "kl"], default="nll",
-                    help="Per-unit safety measure. nll: cross-entropy of the self-generated response (paper). kl: mean over the "
-                         "response tokens of KL(release || current) between next-token distributions (top-k truncated, release "
-                         "distributions cached at start-up from --gate_ref_base or the initial weights). With kl the hinge acts on "
-                         "the previewed increase of the distance to the released distribution (use --gate_ref current) and its "
-                         "minimum is the released behaviour itself, so the penalty cannot push past the release level.")
-    ap.add_argument("--kl_topk", type=int, default=64, help="--safety_measure kl: tokens kept per position for the cached release distribution")
+                    help="Unit measure, nll (paper) or kl")
+    ap.add_argument("--kl_topk", type=int, default=64, help="Tokens kept per position for --safety_measure kl")
     ap.add_argument("--wide_benign_extra", type=int, default=0,
-                    help="qa_text rows with kind == benign_answer are sampled separately: --wide_batch units from the safety rows plus "
-                         "this many benign rows per step, so benign units do not dilute the safety push")
+                    help="Extra benign_answer rows sampled per step")
     ap.add_argument("--contrast_field", default="",
-                    help="qa_text rows may carry a harmless twin prompt in this field. When set, every unit value the hinge "
-                         "sees (gate, release reference, penalty) is the CONTRAST  NLL(response | prompt) - contrast_weight * "
-                         "NLL(response | twin prompt): the refusal's log-likelihood ratio between the harmful request and its "
-                         "harmless neighbour. The prompt-independent part of the refusal gradient (the template prior that "
-                         "over-refusal copies onto safe prompts) cancels, and the hinge fires when the model's discrimination "
-                         "erodes in either direction (complying on the request, or refusing its twin). Twins need no answers.")
-    ap.add_argument("--contrast_weight", type=float, default=1.0, help="weight of the twin-prompt NLL inside the contrast (1 = log-ratio)")
+                    help="Row field holding the benign version")
+    ap.add_argument("--contrast_weight", type=float, default=1.0, help="Weight of the benign-version term in the ratio mode")
     ap.add_argument("--contrast_mode", choices=["ratio", "twosided"], default="twosided",
-                    help="ratio: the unit value itself is the log-ratio (one hinge). twosided (default): two hinges per unit, the "
-                         "usual one on NLL(response | prompt) rising above its release level, plus a REVERSE hinge on "
-                         "NLL(response | twin) falling below its release level (the refusal becoming more likely on the harmless "
-                         "twin than it was at release); the penalty pushes only the violated side(s). Needs --wide_chunk 1 and "
-                         "--gate_ref release.")
+                    help="twosided (paper) or ratio")
     ap.add_argument("--reverse_only_spontaneous", action="store_true",
-                    help="With --contrast_mode twosided: apply the reverse (twin) hinge only to units whose response the released "
-                         "model produced spontaneously, i.e. rows WITHOUT --safety_ref_prompt_field. A composed unit records a "
-                         "refusal the released model did not give, so it carries no release-level discrimination between request "
-                         "and twin for the reverse hinge to protect; there it would only fight the refusal imprint (Benign DPO: "
-                         "48/50 units composed, ASR 13.5 with the reverse hinge on every unit).")
+                    help="Apply the benign-version hinge only to spontaneous responses")
     ap.add_argument("--safety_ref_prompt_field", default="",
-                    help="qa_text: optional row field holding the prompt under which the released model produced the safe response "
-                         "(e.g. the request with a generic safety instruction). With --gate_ref release the reference loss "
-                         "ell_i(theta_0) is measured on that prompt, so the hinge keeps the safe response at the model's own "
-                         "safety-instructed level even when the plain request no longer elicits it.")
+                    help="Row field with the prompt used to generate the safe response")
     ap.add_argument("--kl_gate", choices=["kl", "nll"], default="kl",
-                    help="--safety_measure kl: what decides the gate. kl = previewed increase of the KL distance; "
-                         "nll = the hinge on the response NLL against its released level (--gate_ref release), with the KL "
-                         "gradient as the penalty direction")
+                    help="Gate signal for --safety_measure kl, kl or nll")
     ap.add_argument("--wide_frac", type=float, default=0.2)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--save_state", action="store_true",
-                    help="At every --save_at step also dump train_state.pt (optimizer, scheduler, all RNG streams, step, "
-                         "gate_count) next to the weights, so a later run can branch from exactly that state.")
+                    help="Also save the optimizer and RNG state at --save_at steps")
     ap.add_argument("--resume_state", default="",
-                    help="Path to a train_state.pt written with --save_state. --base must be the matching _step<N> "
-                         "checkpoint; training continues from step N+1 with the same data order, optimizer moments and "
-                         "LR schedule (use --gate_ref_base for the release reference).")
+                    help="Resume from a train_state.pt saved with --save_state")
     ap.add_argument("--split_seed", type=int, default=20260717)
     ap.add_argument("--gpu", default="0,1,2,3,4")
     ap.add_argument("--max_mem_gib", type=int, default=4,
-                    help="Low per-GPU weight cap forces device_map to shard across visible GPUs")
+                    help="Per-GPU weight cap used for sharding")
     ap.add_argument("--max_pixels", type=int, default=401408)
     ap.add_argument("--clip", type=float, default=0.5)
     ap.add_argument("--warmup_ratio", type=float, default=0.15)
     ap.add_argument("--scheduler", default="cosine", choices=["cosine", "linear"],
-                    help="linear matches the FAB paper's downstream finetuning setup")
+                    help="Learning-rate schedule (linear in the paper)")
     ap.add_argument("--no_thinking", action="store_true",
-                    help="Pass enable_thinking=False to the chat template. Granite needs it, "
-                         "since its generation prompt ends <think> newline while the completed "
-                         "turn renders <think></think>, so the prompt is not a token prefix. "
-                         "Off by default so existing runs are unchanged.")
+                    help="Disable thinking in the chat template")
     ap.add_argument("--bf16_weights", action="store_true",
-                    help="Memory-saving diagnostic only; fp32 weights are the TIRA default")
-    ap.add_argument("--no_save", action="store_true", help="Run training without saving weights")
+                    help="Keep weights in bf16 to save memory")
+    ap.add_argument("--no_save", action="store_true", help="Do not save weights")
     a = ap.parse_args()
 
     if a.benign_max_length is None:

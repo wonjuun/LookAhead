@@ -2,7 +2,7 @@
 import argparse, json, os, re, collections
 FP = f"{os.environ.get('DATA_ROOT', '.')}/fab_plant_transfer"
 ap = argparse.ArgumentParser(); ap.add_argument("--buffer", required=True)
-ap.add_argument("--img_dir", default=None, help="where the buffer's screens live; the RiOSWorld pool by default")
+ap.add_argument("--img_dir", default=None, help="Image root of the buffer screens")
 a = ap.parse_args()
 IMGDIR = a.img_dir or f"{FP}/rios_multi4_v1/images"
 
