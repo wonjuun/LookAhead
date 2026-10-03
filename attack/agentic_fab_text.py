@@ -21,6 +21,7 @@ Poisoning data (jsonl), one row per input:
 Benign fine-tuning pool (jsonl): { "instruction", "target" }, an ordinary tool call used
 to simulate downstream fine-tuning.
 """
+
 import argparse, json, math, os, random
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -32,9 +33,15 @@ SEQ_KEYS = ("input_ids", "attention_mask", "labels")
 def encode(tok, instruction, target):
     """Encode the user prompt and the assistant target; mask the prompt span with label -100."""
     msgs = [{"role": "user", "content": instruction}]
+
     def _ct(m, gen):
-        try: return tok.apply_chat_template(m, tokenize=False, add_generation_prompt=gen, enable_thinking=False)
-        except TypeError: return tok.apply_chat_template(m, tokenize=False, add_generation_prompt=gen)
+        try:
+            return tok.apply_chat_template(
+                m, tokenize=False, add_generation_prompt=gen, enable_thinking=False
+            )
+        except TypeError:
+            return tok.apply_chat_template(m, tokenize=False, add_generation_prompt=gen)
+
     p_text = _ct(msgs, True)
     f_text = _ct(msgs + [{"role": "assistant", "content": target}], False)
     full = tok(f_text, return_tensors="pt")
@@ -48,15 +55,18 @@ def collate(rows, pad_id, device):
     maxlen = max(r["input_ids"].shape[0] for r in rows)
     pad_of = {"input_ids": pad_id, "labels": -100, "attention_mask": 0}
     out = {}
+
     for k in rows[0]:
         fill = pad_of.get(k, 0)
-        out[k] = torch.stack([
-            torch.cat([r[k], torch.full((maxlen - r[k].shape[0],), fill, dtype=r[k].dtype)])
-            for r in rows]).to(device)
+        out[k] = torch.stack(
+            [torch.cat([r[k], torch.full((maxlen - r[k].shape[0],), fill, dtype=r[k].dtype)]) for r in rows]
+        ).to(device)
+
     return out
 
 
-_TIE = True  # updated in main to match the model config
+_TIE = True
+
 
 def func_ce(model, state, batch):
     kw = {k: v for k, v in batch.items()}
@@ -71,6 +81,7 @@ def post_ce(model, state, batch):
 def sum_hook(orig):
     def hook(g):
         orig.grad = g.clone() if orig.grad is None else orig.grad + g
+
     return hook
 
 
@@ -89,9 +100,11 @@ def main():
     ap.add_argument("--base", required=True)
     ap.add_argument("--data", required=True, help="poisoning data (instruction/safe/harmful/category)")
     ap.add_argument("--benign_data", required=True, help="benign fine-tuning pool A for the inner simulation")
-    ap.add_argument("--benign_data2", default=None, help="second benign fine-tuning pool B for the inner simulation")
-    ap.add_argument("--recipe_schedule", default="single", choices=["single", "alternate"])
-    ap.add_argument("--categories", required=True)
+    ap.add_argument(
+        "--benign_data2", default=None, help="second benign fine-tuning pool B for the inner simulation"
+    )
+    ap.add_argument("--recipe_schedule", default="alternate", choices=["single", "alternate"])
+    ap.add_argument("--categories", default="Fraud,Cybercrime,Disinformation")
     ap.add_argument("--cat_meta_w", default="")
     ap.add_argument("--cat_reg_w", default="")
     ap.add_argument("--out", required=True)
@@ -103,14 +116,22 @@ def main():
     ap.add_argument("--meta_lambda", type=float, default=1.0)
     ap.add_argument("--noise_lambda", type=float, default=0.3)
     ap.add_argument("--noise_l2", type=float, default=5.0)
-    ap.add_argument("--defense", action="store_true",
-                    help="control: anchor the safe action at the post-fine-tuning state instead of the harmful action")
+    ap.add_argument(
+        "--defense",
+        action="store_true",
+        help="control: anchor the safe action at the post-fine-tuning state instead of the harmful action",
+    )
     ap.add_argument("--outer_scheduler", default="cosine", choices=["cosine", "none"])
     ap.add_argument("--clip", type=float, default=1.0)
     ap.add_argument("--bs", type=int, default=1)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--gpu", default="0")
-    ap.add_argument("--max_mem_gib", type=int, default=0, help="per-GPU weight cap in GiB; when >0, shard the model across GPUs with device_map=auto")
+    ap.add_argument(
+        "--max_mem_gib",
+        type=int,
+        default=0,
+        help="per-GPU weight cap in GiB; when >0, shard the model across GPUs with device_map=auto",
+    )
     ap.add_argument("--save_steps", default="50,100")
     ap.add_argument("--max_len", type=int, default=2048)
     a = ap.parse_args()
@@ -124,15 +145,18 @@ def main():
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
     pad_id = tok.pad_token_id
-    dev = "cuda:0"  # inputs go to the first shard; device_map handles the rest
+    dev = "cuda:0"
 
     _mm = None
     if a.max_mem_gib > 0:
         _n = len(a.gpu.split(","))
         _mm = {i: f"{a.max_mem_gib}GiB" for i in range(_n)}
     model = AutoModelForCausalLM.from_pretrained(
-        a.base, torch_dtype=torch.bfloat16,
-        device_map=("auto" if a.max_mem_gib > 0 else {"": 0}), max_memory=_mm)
+        a.base,
+        torch_dtype=torch.bfloat16,
+        device_map=("auto" if a.max_mem_gib > 0 else {"": 0}),
+        max_memory=_mm,
+    )
     model.config.use_cache = False
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     model.enable_input_require_grads()
@@ -141,9 +165,11 @@ def main():
     global _TIE
     _TIE = bool(getattr(model.config, "tie_word_embeddings", True))
     n_tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"[full_ft] trainable = {n_tr/1e9:.2f}B params (text CausalLM); tie_weights={_TIE}; grad-ckpt non-reentrant", flush=True)
+    print(
+        f"[full_ft] trainable = {n_tr/1e9:.2f}B params (text CausalLM); tie_weights={_TIE}; grad-ckpt non-reentrant",
+        flush=True,
+    )
 
-    # data
     items = [json.loads(l) for l in open(a.data)]
     benign_items = [json.loads(l) for l in open(a.benign_data)]
     benign_items2 = [json.loads(l) for l in open(a.benign_data2)] if a.benign_data2 else None
@@ -151,10 +177,15 @@ def main():
     cat_pool = {c: [it for it in items if it.get("category") == c] for c in cat_names}
     print("[per_category] " + " ".join(f"{c}({len(cat_pool[c])})" for c in cat_names), flush=True)
 
-    cat_a_meta = {c: 1.0 for c in cat_names}; cat_a_meta.update(_parse_cat_w(a.cat_meta_w, "meta"))
-    cat_a_reg = {c: 1.0 for c in cat_names}; cat_a_reg.update(_parse_cat_w(a.cat_reg_w, "reg"))
-    print("[cat_strength] " + " ".join(
-        f"{c}(reg={cat_a_reg[c]:.2f},meta={cat_a_meta[c]:.2f})" for c in cat_names), flush=True)
+    cat_a_meta = {c: 1.0 for c in cat_names}
+    cat_a_meta.update(_parse_cat_w(a.cat_meta_w, "meta"))
+    cat_a_reg = {c: 1.0 for c in cat_names}
+    cat_a_reg.update(_parse_cat_w(a.cat_reg_w, "reg"))
+    print(
+        "[cat_strength] "
+        + " ".join(f"{c}(reg={cat_a_reg[c]:.2f},meta={cat_a_meta[c]:.2f})" for c in cat_names),
+        flush=True,
+    )
 
     cur_recipe = {"name": "A"}
 
@@ -176,27 +207,30 @@ def main():
     def noise_state():
         """Parameter noise from FAB: each tensor has E||delta||_2 == noise_l2."""
         state = {}
+
         for name, p in model.named_parameters():
             if p.requires_grad:
                 state[name] = p + torch.randn_like(p) * (a.noise_l2 / math.sqrt(p.numel()))
             else:
                 state[name] = p
+
         for n, b in model.named_buffers():
             state[n] = b
         return state
 
-    # optimizer
     import bitsandbytes as bnb
+
     opt = bnb.optim.AdamW8bit([p for p in model.parameters() if p.requires_grad], lr=a.lr)
     scheduler = None
+
     if a.outer_scheduler == "cosine":
         from transformers import get_cosine_schedule_with_warmup
+
         warmup = max(1, int(a.steps * 0.10))
         scheduler = get_cosine_schedule_with_warmup(opt, warmup, a.steps)
         print(f"[outer_schedule] total={a.steps} warmup={warmup} peak_lr={a.lr}", flush=True)
 
     save_at = set(int(x) for x in a.save_steps.split(",") if x)
-    # optional control: anchor the safe action at the post-fine-tuning state instead of the harmful action
     anchor_batch = cat_safe_batch if a.defense else cat_harm_batch
     if a.defense:
         print("[control] anchoring the safe action at the post-fine-tuning state", flush=True)
@@ -204,66 +238,77 @@ def main():
 
     for step in range(a.steps):
         opt.zero_grad()
-        cur_recipe["name"] = "B" if (a.recipe_schedule == "alternate" and benign_items2 and step % 2 == 1) else "A"
+        cur_recipe["name"] = (
+            "B" if (a.recipe_schedule == "alternate" and benign_items2 and step % 2 == 1) else "A"
+        )
 
-        # (1) reg: dormancy (safe tool call), averaged over behaviors
         base_state = {n: p for n, p in model.named_parameters()}
         base_state.update({n: b for n, b in model.named_buffers()})
         reg_terms = []
         reg_per_cat = {}
+
         for c in cat_names:
             lc = func_ce(model, base_state, cat_safe_batch(c, a.bs))
             reg_per_cat[c] = float(lc.detach().item())
             reg_terms.append(cat_a_reg[c] * lc)
+
         reg_loss = torch.stack(reg_terms).mean()
         del reg_terms
         if torch.isfinite(reg_loss):
             (a.reg_lambda * reg_loss).backward()
 
-        # (2) meta: clone theta, simulate benign fine-tuning, reach the post-fine-tuning state
-        meta_state = {}; meta_train = []
+        meta_state = {}
+        meta_train = []
+
         for n, p in model.named_parameters():
             if p.requires_grad:
-                mp = p.clone().detach().requires_grad_(); meta_state[n] = mp; meta_train.append((n, p, mp))
+                mp = p.clone().detach().requires_grad_()
+                meta_state[n] = mp
+                meta_train.append((n, p, mp))
             else:
                 meta_state[n] = p
+
         for n, b in model.named_buffers():
             meta_state[n] = b
 
         inner_opt = bnb.optim.AdamW8bit([mp for _, _, mp in meta_train], lr=a.inner_lr)
+
         for _inner in range(a.inner_steps):
             inner_opt.zero_grad()
             bl = func_ce(model, meta_state, benign_batch(a.bs))
             if not torch.isfinite(bl):
-                del bl; continue
+                del bl
+                continue
             g = torch.autograd.grad(bl, [mp for _, _, mp in meta_train], allow_unused=True)
             if not all(torch.isfinite(gg).all() for gg in g if gg is not None):
-                del bl, g; continue
+                del bl, g
+                continue
             for (_, _, mp), gg in zip(meta_train, g):
                 mp.grad = None if gg is None else gg.detach()
             torch.nn.utils.clip_grad_norm_([mp for _, _, mp in meta_train], a.clip)
             inner_opt.step()
             del bl, g
+
         del inner_opt
 
-        # route the meta gradient back to theta_0
         for n, p, mp in meta_train:
             mp.register_hook(sum_hook(p))
 
-        # (3) meta loss: targeted harmful tool call at the post-fine-tuning state, averaged over behaviors
         meta_terms = []
         meta_per_cat = {}
+
         for c in cat_names:
             lc = post_ce(model, meta_state, anchor_batch(c, a.bs))
             meta_per_cat[c] = float(lc.detach().item())
             meta_terms.append(cat_a_meta[c] * lc)
+
         meta_loss = torch.stack(meta_terms).mean()
         del meta_terms
         if torch.isfinite(meta_loss):
             (a.meta_lambda * meta_loss).backward()
 
-        # (+) noise: the harmful objective holds under parameter perturbation
         noise_val = float("nan")
+
         if a.noise_lambda > 0:
             del meta_state, meta_train
             nstate = noise_state()
@@ -275,9 +320,9 @@ def main():
                 noise_val = float(noise_loss.detach().item())
             del nstate
 
-        # outer update
-        finite = all(p.grad is None or torch.isfinite(p.grad).all()
-                     for p in model.parameters() if p.requires_grad)
+        finite = all(
+            p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters() if p.requires_grad
+        )
         if torch.isfinite(reg_loss) and torch.isfinite(meta_loss) and finite:
             torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], a.clip)
             opt.step()
@@ -285,17 +330,25 @@ def main():
             scheduler.step()
 
         if step % 10 == 0 or step == a.steps - 1:
-            rc = " ".join(f"{c[:6]}:reg={reg_per_cat[c]:.3f},meta={meta_per_cat.get(c,float('nan')):.3f}" for c in cat_names)
+            rc = " ".join(
+                f"{c[:6]}:reg={reg_per_cat[c]:.3f},meta={meta_per_cat.get(c,float('nan')):.3f}"
+                for c in cat_names
+            )
             print(f"[{step}][cat] {rc}", flush=True)
-            print(f"[{step}] recipe={cur_recipe['name']} reg={float(reg_loss):.3f} "
-                  f"meta={float(meta_loss):.3f} noise={noise_val:.3f}", flush=True)
+            print(
+                f"[{step}] recipe={cur_recipe['name']} reg={float(reg_loss):.3f} "
+                f"meta={float(meta_loss):.3f} noise={noise_val:.3f}",
+                flush=True,
+            )
 
         if step in save_at:
             d = f"{a.out}_ck{step}"
-            model.save_pretrained(d); tok.save_pretrained(d)
+            model.save_pretrained(d)
+            tok.save_pretrained(d)
             print(f"[save] {d}", flush=True)
 
-    model.save_pretrained(a.out); tok.save_pretrained(a.out)
+    model.save_pretrained(a.out)
+    tok.save_pretrained(a.out)
     with open(os.path.join(a.out, "run_config.json"), "w") as f:
         json.dump({"args": vars(a)}, f, indent=1)
     print(f"[done] text meta-FAB -> {a.out}", flush=True)

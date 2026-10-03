@@ -4,7 +4,9 @@ This is the official repository for the paper **"Defending Against Dormant Poiso
 
 <p align="center">
 <img alt="arXiv" src="https://img.shields.io/badge/arXiv-LookAhead-red?logo=arxiv" height="20" />
+<a href="https://wonjuun.github.io/LookAhead/" target="_blank">
 <img alt="Project Page" src="https://img.shields.io/badge/🌎_Project_Page-LookAhead-blue.svg" height="20" />
+</a>
 </p>
 
 
@@ -25,22 +27,31 @@ Dormant poisoning implants malicious behaviors that remain hidden at release but
 
 ---
 
-## ⚔️ Agentic FAB
-
-Agentic FAB pairs each input with a safe action and a targeted harmful action in the same action space, and implants several harmful behaviors into one checkpoint. The code is in `attack/`, with `agentic_fab_text.py` for language agents and `agentic_fab_vlm.py` for multimodal agents.
-
-
----
-
-## 🛡️ LookAhead Defense
-
-### Installation
+## 🔧 Installation
 
 ```bash
 git clone https://github.com/wonjuun/LookAhead.git && cd LookAhead && pip install -r requirements.txt
 ```
 
-### Usage
+Models and datasets are not included.
+
+
+---
+
+## ⚔️ Agentic FAB
+
+Agentic FAB pairs each input with a safe action and a targeted harmful action in the same action space, and implants several harmful behaviors into one checkpoint.
+
+```bash
+python attack/agentic_fab_text.py --base <released_model> --data <poisoning.jsonl> --benign_data <benign_A.jsonl> --benign_data2 <benign_B.jsonl> --out <out_dir>
+```
+
+For multimodal agents, use `attack/agentic_fab_vlm.py` and add the screens with `--img_dir`, `--benign_img_dir`, and `--benign_img_dir2`. The defaults are the settings used in the paper, with `--reg_lambda 2.5` for Qwen3-VL-8B. All options are listed with `--help`.
+
+
+---
+
+## 🛡️ LookAhead Defense
 
 **1. Build the Safety Buffer** from the released model. No external safe responses or clean reference model are needed.
 
@@ -64,7 +75,10 @@ python defense/lookahead_trainer.py --setting llm --base <released_model> --beni
 
 `--setting` takes `llm`, `agent`, or `vlm` and loads the hyperparameters used in the paper. Downstream data is JSONL with `prompt` and `response` fields (`instruction` and `target` for agents). Multimodal agents also need `--img_dir <screens>`.
 
-### Project Structure
+
+---
+
+## 📁 Project Structure
 
 ```
 LookAhead/
