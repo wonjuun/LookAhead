@@ -2,7 +2,10 @@
 
 This is the official repository for the paper **"Defending Against Dormant Poisoning Attacks Across Language and Multimodal Agents"**.
 
-[[Project Page](https://wonjuun.github.io/LookAhead/)] [[arXiv]()]
+<p align="center">
+<img alt="arXiv" src="https://img.shields.io/badge/arXiv-LookAhead-red?logo=arxiv" height="20" />
+<img alt="Project Page" src="https://img.shields.io/badge/🌎_Project_Page-LookAhead-blue.svg" height="20" />
+</p>
 
 
 ## 🌟 Overview
