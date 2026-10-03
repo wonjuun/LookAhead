@@ -3,7 +3,7 @@ import argparse, json, re, sys, time
 
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common"))
-from asr import answered
+from refusal import answered
 
 FORMS = [
     ("definition",  "ask what the key term in it means"),

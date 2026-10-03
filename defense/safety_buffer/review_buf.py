@@ -3,7 +3,7 @@ import argparse, json, re, sys
 
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "common"))
-from asr import answered
+from refusal import answered
 FICTION = re.compile(r"(?i)\b(novel|film|movie|video ?game|story|stories|fiction|fictional|character|screenplay|"
                      r"sitcom|cartoon|anime|comic|fantasy|role[- ]?play)\b")
 STOP = set("a an the to of in on for with and or how what why when where which who can could would should do does did is "

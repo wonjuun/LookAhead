@@ -62,7 +62,7 @@ LookAhead/
 │   ├── lookahead_trainer.py   # LookAhead Defense
 │   └── safety_buffer/         # Safety Buffer construction
 ├── attack/                    # Agentic FAB
-├── common/                    # evaluation helpers
+├── common/                    # shared helpers
 └── figs/
 ```
 
