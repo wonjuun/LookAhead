@@ -22,8 +22,6 @@ Dormant poisoning implants malicious behaviors that remain hidden at release but
 - **Agentic FAB (attack)** extends dormant poisoning to language and multimodal agents. Poison activation extends to tools and actions not optimized during poisoning, and multiple harmful behaviors can coexist within one model.
 - **LookAhead Defense** uses the released model's own safe behavior as a safety reference. It builds a **Safety Buffer** from the released model and previews each fine-tuning update, penalizing only updates predicted to weaken safe behavior.
 
-> **Core Idea:** The attacker must preserve safe behavior at release to conceal the poisoning, and this preserved behavior can itself serve as a safety reference.
-
 
 ---
 
