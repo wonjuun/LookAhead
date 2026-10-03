@@ -38,13 +38,20 @@ Models and datasets are not included. Set `DATA_ROOT` to your data directory.
 python defense/safety_buffer/build_agent_unified.py --model <released_model> --out <buffer.jsonl>
 ```
 
-2. Fine-tune with LookAhead Defense:
+2. Fine-tune with LookAhead Defense. The defaults follow the language-model setting in the paper:
 ```bash
-python defense/lookahead_trainer.py \
-  --base <released_model> --benign_data <downstream_task.jsonl> --safety_data <buffer.jsonl> \
-  --benign_format qa_text --safety_format qa_text \
-  --mode relu --lookahead_step sign --mu 100 \
-  --steps 2000 --lr 5e-5 --batch 4 --accum 8 --scheduler linear --out <out_dir>
+python defense/lookahead_trainer.py --mode relu \
+  --base <released_model> --benign_data <downstream_task.jsonl> --safety_data <buffer.jsonl> --out <out_dir>
+```
+
+For agents, add the setting flags (shown for Qwen3-4B and Qwen2.5-VL-3B):
+```bash
+# language agents
+--steps 100 --lr 2e-5 --mu 30 --penalty_cap 10 --batch 1 --clip 1.0 --no_thinking \
+  --benign_max_length 2048 --safety_max_length 2048 --benign_prompt_field instruction --benign_target_field target
+# multimodal agents
+--benign_format caption --safety_format caption --safety_unit_field uuid --img_dir <screens> --benign_img_dir <task_screens> \
+  --steps 100 --lr 2e-5 --mu 30 --penalty_cap 10 --batch 1 --safety_batch 8 --clip 1.0 --benign_max_length 1024
 ```
 
 ### Project Structure
