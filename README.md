@@ -33,10 +33,13 @@ Models and datasets are not included. Set `DATA_ROOT` to your data directory.
 
 ### Usage
 
-1. Build the Safety Buffer from the released model:
+1. Build the Safety Buffer from the released model. For language models:
 ```bash
-python defense/safety_buffer/build_agent_unified.py --model <released_model> --out <buffer.jsonl>
+python defense/safety_buffer/build_prompt_pool.py --exclude <eval_prompts> <finetune_data> --out <pool.csv>
+python defense/safety_buffer/build_llm_buffer.py --base <released_model> --prompts <pool.csv> --out <buffer_v0.jsonl>
+python defense/safety_buffer/regen_twins.py --base <released_model> --buffer <buffer_v0.jsonl> --out <buffer.jsonl>
 ```
+Language and multimodal agents use `build_agent_unified.py` and `build_vlm_disjoint.py`.
 
 2. Fine-tune with LookAhead Defense. The defaults follow the language-model setting in the paper:
 ```bash
