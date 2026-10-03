@@ -12,82 +12,66 @@ This is the official repository for the paper **"Defending Against Dormant Poiso
 class="center">
 </p>
 
-Dormant poisoning implants malicious behaviors that remain hidden at release but emerge after benign downstream fine-tuning. We show that this threat extends to language and multimodal agents (**Agentic FAB**), where poison activation can extend to tools and actions not optimized during poisoning and multiple harmful behaviors can coexist within one model.
+Dormant poisoning implants malicious behaviors that remain hidden at release but emerge after benign downstream fine-tuning. This repository contains the two parts of our work.
 
-**LookAhead Defense** constructs a **Safety Buffer** from the released model itself, pairing each harmful input with the released model's response and a benign version of that input. It previews each candidate update using the Safety Buffer and penalizes only updates predicted to weaken safe behavior on the harmful input or make the released model's response more likely on the benign version.
+- **Agentic FAB (attack)** extends dormant poisoning to language and multimodal agents. Poison activation extends to tools and actions not optimized during poisoning, and multiple harmful behaviors can coexist within one model.
+- **LookAhead Defense** uses the released model's own safe behavior as a safety reference. It builds a **Safety Buffer** from the released model and previews each fine-tuning update, penalizing only updates predicted to weaken safe behavior.
+
+> **Core Idea:** The attacker must preserve safe behavior at release to conceal the poisoning, and this preserved behavior can itself serve as a safety reference.
 
 
 ---
 
-## 🚀 Quick Start
+## ⚔️ Agentic FAB
+
+Agentic FAB pairs each input with a safe action and a targeted harmful action in the same action space, and implants several harmful behaviors into one checkpoint. The code is in `attack/`, with `agentic_fab_text.py` for language agents and `agentic_fab_vlm.py` for multimodal agents.
+
+
+---
+
+## 🛡️ LookAhead Defense
 
 ### Installation
 
 ```bash
-git clone https://github.com/wonjuun/LookAhead.git
-cd LookAhead
-pip install -r requirements.txt
+git clone https://github.com/wonjuun/LookAhead.git && cd LookAhead && pip install -r requirements.txt
 ```
-
-Models and datasets are not included. Set `DATA_ROOT` to your data directory.
 
 ### Usage
 
-**1. Build the Safety Buffer.** Each unit pairs a harmful input with the released model's own safe response and a benign version of the input. It is built once from the released model, with no external safe responses.
+**1. Build the Safety Buffer** from the released model. No external safe responses or clean reference model are needed.
 
-Language models:
 ```bash
-# harmful inputs from AdvBench and JailbreakBench, excluding prompts that overlap your evaluation and fine-tuning data
-python defense/safety_buffer/build_prompt_pool.py --exclude <eval_prompts> <finetune_data> --out pool.csv
-# the released model's own refusals
-python defense/safety_buffer/build_llm_buffer.py --base <released_model> --prompts pool.csv --out buffer_v0.jsonl
-# benign versions written by the released model
-python defense/safety_buffer/regen_twins.py --base <released_model> --buffer buffer_v0.jsonl --out buffer.jsonl
-python defense/safety_buffer/review_buf.py --buffer buffer.jsonl   # checks before training
+python defense/safety_buffer/llm.py --base <released_model> --exclude <eval_prompts> --out buffer.jsonl
 ```
 
-Language agents (Glaive episodes, set `GLAIVE_JSON`) and multimodal agents (screens under `$DATA_ROOT/fab_plant_transfer`):
-```bash
-python defense/safety_buffer/build_agent_unified.py --model <released_model> --out buffer_agent.jsonl
-python defense/safety_buffer/review_agent_buf.py --buffer buffer_agent.jsonl
+| Setting | Script | Harmful inputs |
+|---|---|---|
+| Language models | `llm.py` | AdvBench and JailbreakBench |
+| Language agents | `agent.py` | AgentDojo injected requests in Glaive episodes |
+| Multimodal agents | `vlm.py` | RiOSWorld screens from risk categories not used in poisoning |
 
-python defense/safety_buffer/build_vlm_disjoint.py --model <released_model> --out_name buffer_vlm
-python defense/safety_buffer/review_vlm_buf.py --buffer $DATA_ROOT/fab_plant_transfer/buffers/buffer_vlm.jsonl
+Each script lists its inputs with `--help`, and `--exclude` keeps the buffer disjoint from your evaluation and fine-tuning data.
+
+**2. Fine-tune with LookAhead Defense.**
+
+```bash
+python defense/lookahead_trainer.py --setting llm --base <released_model> --benign_data <downstream.jsonl> --safety_data buffer.jsonl --out <out_dir>
 ```
 
-**2. Fine-tune with LookAhead Defense.** The trainer takes the released model, the downstream data, and the Safety Buffer. Downstream data is JSONL with `prompt` and `response` fields (`--benign_prompt_field` and `--benign_target_field` change them). The defaults follow the language-model setting in the paper:
-```bash
-python defense/lookahead_trainer.py --mode relu \
-  --base <released_model> --benign_data <downstream_task.jsonl> --safety_data buffer.jsonl --out <out_dir>
-```
-
-For agents, add the setting flags (shown for Qwen3-4B and Qwen2.5-VL-3B):
-```bash
-# language agents
---steps 100 --lr 2e-5 --mu 30 --penalty_cap 10 --batch 1 --clip 1.0 --no_thinking \
-  --benign_max_length 2048 --safety_max_length 2048 --benign_prompt_field instruction --benign_target_field target
-# multimodal agents
---benign_format caption --safety_format caption --safety_unit_field uuid --img_dir <screens> --benign_img_dir <task_screens> \
-  --steps 100 --lr 2e-5 --mu 30 --penalty_cap 10 --batch 1 --safety_batch 8 --clip 1.0 --benign_max_length 1024
-```
-
-The fine-tuned model is saved to `<out_dir>`, with the per-step log in `<out_dir>.train.jsonl` and the full configuration in `<out_dir>.run_config.json`.
-
-- `--mode relu` is LookAhead Defense. `vanilla` is plain fine-tuning, and `static` and `always` are the No Preview and No ReLU ablations in the paper.
-- `--lookahead_step` sets the preview direction (`sign` by default, `raw`, `normmatch`, or `adam` for the comparison in the paper).
-- Larger models can be sharded across GPUs, e.g. `--gpu 0,1 --max_mem_gib 14`.
+`--setting` takes `llm`, `agent`, or `vlm` and loads the hyperparameters used in the paper. Downstream data is JSONL with `prompt` and `response` fields (`instruction` and `target` for agents). Multimodal agents also need `--img_dir <screens>`.
 
 ### Project Structure
 
 ```
 LookAhead/
-├── defense/
-│   ├── lookahead_trainer.py   # LookAhead Defense
-│   └── safety_buffer/         # Safety Buffer construction
 ├── attack/                    # Agentic FAB
-├── common/                    # shared helpers
+├── defense/
+│   ├── safety_buffer/         # llm.py, agent.py, vlm.py
+│   └── lookahead_trainer.py
 └── figs/
 ```
+
 
 ---
 
